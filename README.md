@@ -28,9 +28,9 @@ OH Midi Player is a MIDI player that simulates keyboard inputs based on MIDI eve
 - **Shift + F4**: Open the debug form for additional diagnostics.
 
 
-## Issues
+## Contact
 
-If you encounter any bugs or have suggestions, please [open an issue](https://github.com/your-username/OH Midi Player/issues) on GitHub.
+If you encounter any issues or have any problems please join the official [OH Midi Player Discord!](https://discord.gg/bSeZ8EDYAj)
 
 ## License
 
