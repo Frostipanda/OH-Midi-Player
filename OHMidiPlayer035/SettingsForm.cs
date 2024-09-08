@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using OHMidiPlayer035.Properties;
 
 namespace OHMidiPlayer035
 {
@@ -27,45 +30,65 @@ namespace OHMidiPlayer035
             // Bind the text boxes to the delay settings
             minNoteDelay.DataBindings.Add("Text", Properties.Settings.Default, "minNoteDelay", false, DataSourceUpdateMode.OnPropertyChanged);
             modHold.DataBindings.Add("Text", Properties.Settings.Default, "modHold", false, DataSourceUpdateMode.OnPropertyChanged);
+
+            // Bind the checkbox to the AlwaysOnTop setting
+            alwaysOnTop.DataBindings.Add("Checked", Properties.Settings.Default, "AlwaysOnTop", false, DataSourceUpdateMode.OnPropertyChanged);
+            alwaysOnTop.CheckedChanged += AlwaysOnTop_CheckedChanged;
+
         }
 
         private void LoadSettingsFromIni()
         {
-            string filePath = Path.Combine(Application.StartupPath, SettingsFileName);
-            if (File.Exists(filePath))
+            string path = Path.Combine(Application.StartupPath, "settings.ini");
+            if (File.Exists(path))
             {
-                var settings = File.ReadAllLines(filePath)
-                    .Where(line => line.Contains('=') && line.Split('=').Length == 2)
-                    .Select(line => line.Split('='))
-                    .ToDictionary(parts => parts[0].Trim(), parts => parts[1].Trim());
-
-                // Update application settings based on the ini file
-                if (settings.ContainsKey("AlwaysOnTop"))
-                    Properties.Settings.Default.AlwaysOnTop = bool.Parse(settings["AlwaysOnTop"]);
-                if (settings.ContainsKey("CurrentLayoutIndex"))
-                    Properties.Settings.Default.CurrentLayoutIndex = int.Parse(settings["CurrentLayoutIndex"]);
-                if (settings.ContainsKey("IgnoreOH"))
-                    Properties.Settings.Default.IgnoreOH = bool.Parse(settings["IgnoreOH"]);
-                if (settings.ContainsKey("minNoteDelay"))
-                    Properties.Settings.Default["minNoteDelay"] = int.Parse(settings["minNoteDelay"]);
-                if (settings.ContainsKey("modHold"))
-                    Properties.Settings.Default["modHold"] = int.Parse(settings["modHold"]);
+                Dictionary<string, string> dictionary = (from line in File.ReadAllLines(path)
+                                                         where line.Contains('=') && line.Split('=').Length == 2
+                                                         select line.Split('=')).ToDictionary((string[] parts) => parts[0].Trim(), (string[] parts) => parts[1].Trim());
+                if (dictionary.ContainsKey("AlwaysOnTop"))
+                {
+                    Settings.Default.AlwaysOnTop = bool.Parse(dictionary["AlwaysOnTop"]);
+                }
+                if (dictionary.ContainsKey("CurrentLayoutIndex"))
+                {
+                    Settings.Default.CurrentLayoutIndex = int.Parse(dictionary["CurrentLayoutIndex"]);
+                }
+                if (dictionary.ContainsKey("IgnoreOH"))
+                {
+                    Settings.Default.IgnoreOH = bool.Parse(dictionary["IgnoreOH"]);
+                }
+                if (dictionary.ContainsKey("minNoteDelay"))
+                {
+                    Settings.Default["minNoteDelay"] = int.Parse(dictionary["minNoteDelay"]);
+                }
+                if (dictionary.ContainsKey("modHold"))
+                {
+                    Settings.Default["modHold"] = int.Parse(dictionary["modHold"]);
+                }
             }
         }
 
+        private void AlwaysOnTop_CheckedChanged(object sender, EventArgs e)
+        {
+            Settings.Default.AlwaysOnTop = alwaysOnTop.Checked;
+            if (Application.OpenForms["Form1"] is Form1 form)
+            {
+                form.UpdateAlwaysOnTop(alwaysOnTop.Checked);
+            }
+        }
 
         private void SaveSettingsToIni()
         {
-            string filePath = Path.Combine(Application.StartupPath, SettingsFileName);
-            var lines = new List<string>
-            {
-                $"AlwaysOnTop={Properties.Settings.Default.AlwaysOnTop}",
-                $"CurrentLayoutIndex={Properties.Settings.Default.CurrentLayoutIndex}",
-                $"IgnoreOH={Properties.Settings.Default.IgnoreOH}",
-                $"minNoteDelay={Properties.Settings.Default["minNoteDelay"]}",
-                $"modHold={Properties.Settings.Default["modHold"]}"
-            };
-            File.WriteAllLines(filePath, lines);
+            string path = Path.Combine(Application.StartupPath, "settings.ini");
+            List<string> contents = new List<string>
+        {
+            $"AlwaysOnTop={Settings.Default.AlwaysOnTop}",
+            $"CurrentLayoutIndex={Settings.Default.CurrentLayoutIndex}",
+            $"IgnoreOH={Settings.Default.IgnoreOH}",
+            string.Format("minNoteDelay={0}", Settings.Default["minNoteDelay"]),
+            string.Format("modHold={0}", Settings.Default["modHold"])
+        };
+            File.WriteAllLines(path, contents);
         }
 
         private void IgnoreOH_CheckedChanged(object sender, EventArgs e)
@@ -84,6 +107,11 @@ namespace OHMidiPlayer035
 
             // Also save settings to ini file
             SaveSettingsToIni();
+        }
+
+        private void SettingsForm_Load(object sender, EventArgs e)
+        {
+
         }
     }
 }

@@ -8,7 +8,7 @@ namespace OHMidiPlayer035
     static class Program
     {
         private static readonly string VersionUrl = "https://raw.githubusercontent.com/Frostipanda/Once-Human-Midi-Player/main/version.txt";
-        private static readonly string CurrentVersion = "0.35"; // Your current version
+        private static readonly string CurrentVersion = "0.36"; // Your current version
 
         [STAThread]
         static void Main()

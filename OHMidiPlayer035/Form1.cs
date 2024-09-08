@@ -1,15 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Runtime.Remoting.Metadata.W3cXsd2001;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using NAudio.Midi;
+using Melanchall.DryWetMidi.Core;
+using Melanchall.DryWetMidi.Interaction;
+using Melanchall.DryWetMidi.Multimedia;
+using OHMidiPlayer035.Properties;
 using WindowsInput;
 using WindowsInput.Native;
 
@@ -20,11 +23,11 @@ namespace OHMidiPlayer035
         
         private string scrollingText = string.Empty;
         private int scrollPosition = 0;
-        private MidiIn midiIn;
         private System.Windows.Forms.Timer scrollTimer = new System.Windows.Forms.Timer();
         private DebugForm debugForm;
         private const int HOTKEY_ID_SHIFT_F4 = 5; // Unique ID for Shift+F4
         private const string SettingsFileName = "settings.ini"; // Name of the settings file
+        private List<string> trackNames = new List<string>();
 
         private int totalTracks = 0;
         private int currentTrackIndex = 0;
@@ -78,6 +81,7 @@ namespace OHMidiPlayer035
             nextTrack.Click += NextTrack_Click;
             prevTrack.Click += PrevTrack_Click;
             speedSlider.Scroll += speedSlider_Scroll;
+            base.TopMost = Settings.Default.AlwaysOnTop;
 
             scrollTimer.Interval = 100;
             scrollTimer.Tick += ScrollTimer_Tick;
@@ -227,7 +231,78 @@ namespace OHMidiPlayer035
             }
         }
 
+        private List<(MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex)> BuildPlaybackQueue()
+        {
+            List<(MidiEvent, long, int, int)> list = new List<(MidiEvent, long, int, int)>();
+            if (currentMidiFile == null)
+            {
+                MessageBox.Show("No MIDI file loaded.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+                return list;
+            }
+            int ticksPerQuarterNote = ((TicksPerQuarterNoteTimeDivision)currentMidiFile.TimeDivision).TicksPerQuarterNote;
+            int initialTempo = GetInitialTempo(currentMidiFile);
+            int initialTempo2 = (int)((double)initialTempo * (100.0 / (double)speedSlider.Value));
+            List<(MidiEvent, long, int, int)> list2 = CollectMidiEventsWithTrack(currentMidiFile, ticksPerQuarterNote, initialTempo2);
+            if (trackind.Tag as string == "off")
+            {
+                list2 = list2.Where<(MidiEvent, long, int, int)>(((MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex) e) => e.trackIndex == currentTrackIndex).ToList();
+            }
+            if (ignoreKeysClickCount > 0)
+            {
+                list2 = FilterIgnoredKeysWithLong(list2);
+            }
+            list.AddRange(list2);
+            return list;
+        }
 
+        private List<(MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex)> FilterIgnoredKeysWithLong(List<(MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex)> allEvents)
+        {
+            List<(MidiEvent, long, int, int)> list = new List<(MidiEvent, long, int, int)>();
+            foreach (var (midiEvent, item, item2, item3) in allEvents)
+            {
+                if (midiEvent is NoteOnEvent noteOnEvent)
+                {
+                    if (!MidiKeyMap.MidiToKey.TryGetValue((byte)noteOnEvent.NoteNumber, out var value))
+                    {
+                        continue;
+                    }
+                    List<VirtualKeyCode> list2 = new List<VirtualKeyCode>(value);
+                    if (ignoreKeysClickCount == 1)
+                    {
+                        list2.RemoveAll((VirtualKeyCode k) => k == VirtualKeyCode.LSHIFT);
+                    }
+                    else if (ignoreKeysClickCount == 2)
+                    {
+                        list2.RemoveAll((VirtualKeyCode k) => k == VirtualKeyCode.LCONTROL);
+                    }
+                    else if (ignoreKeysClickCount == 3)
+                    {
+                        list2.RemoveAll((VirtualKeyCode k) => k == VirtualKeyCode.LSHIFT || k == VirtualKeyCode.LCONTROL);
+                    }
+                    if (list2.Count == 0)
+                    {
+                        continue;
+                    }
+                }
+                list.Add((midiEvent, item, item2, item3));
+            }
+            return list;
+        }
+
+        private void SafeUpdateDebugWindow(string message)
+        {
+            if (debugForm.InvokeRequired)
+            {
+                debugForm.Invoke((Action)delegate
+                {
+                    SafeUpdateDebugWindow(message);
+                });
+            }
+            else
+            {
+                debugForm.AppendDebugText(message);
+            }
+        }
 
         protected override void WndProc(ref Message m)
         {
@@ -298,62 +373,61 @@ namespace OHMidiPlayer035
 
         private void CheckMidiDevice()
         {
-            int deviceCount = MidiIn.NumberOfDevices;
-            if (deviceCount > 0)
+            List<InputDevice> list = InputDevice.GetAll().ToList();
+            if (list.Count > 0)
             {
-
-                Keyboardind.Image = Properties.Resources.good;
-
-
-                midiIn = new MidiIn(0);
-                midiIn.MessageReceived += MidiIn_MessageReceived;
-                midiIn.Start();
+                Keyboardind.Image = Resources.good;
+                InputDevice inputDevice = list[0];
+                inputDevice.EventReceived += MidiIn_MessageReceived;
+                inputDevice.StartEventsListening();
             }
             else
             {
-
-                Keyboardind.Image = Properties.Resources.off;
+                Keyboardind.Image = Resources.off;
             }
         }
+
+
+        private async void MidiIn_MessageReceived(object sender, MidiEventReceivedEventArgs e)
+        {
+            MidiEvent @event = e.Event;
+            if (!(@event is NoteEvent noteEvent))
+            {
+                return;
+            }
+            int midiKey = (byte)noteEvent.NoteNumber;
+            if (!MidiKeyMap.ContainsKey(midiKey))
+            {
+                return;
+            }
+            List<VirtualKeyCode> keyCombination = MidiKeyMap.MidiToKey[midiKey];
+            if (noteEvent is NoteOnEvent noteOnEvent)
+            {
+                if ((byte)noteOnEvent.Velocity > 0)
+                {
+                    if (!activeNotes.ContainsKey(midiKey))
+                    {
+                        activeNotes[midiKey] = keyCombination;
+                        await PressKeyAsync(keyCombination);
+                    }
+                }
+                else if (activeNotes.ContainsKey(midiKey))
+                {
+                    await ReleaseKeyAsync(keyCombination);
+                    activeNotes.Remove(midiKey);
+                }
+            }
+            else if (noteEvent is NoteOffEvent && activeNotes.ContainsKey(midiKey))
+            {
+                await ReleaseKeyAsync(keyCombination);
+                activeNotes.Remove(midiKey);
+            }
+        }
+
 
         private Dictionary<int, List<VirtualKeyCode>> activeNotes = new Dictionary<int, List<VirtualKeyCode>>();
 
-        private async void MidiIn_MessageReceived(object sender, MidiInMessageEventArgs e)
-        {
-            if (e.MidiEvent is NoteEvent noteEvent)
-            {
-                int midiKey = noteEvent.NoteNumber;
-
-                // Check if the key is mapped
-                if (MidiKeyMap.ContainsKey(midiKey))
-                {
-                    var keyCombination = MidiKeyMap.MidiToKey[midiKey];
-
-                    if (noteEvent.CommandCode == MidiCommandCode.NoteOn && noteEvent.Velocity > 0)
-                    {
-                        // Handle NoteOn event
-                        if (!activeNotes.ContainsKey(midiKey))
-                        {
-                            activeNotes[midiKey] = keyCombination;
-                            await PressKeyAsync(keyCombination); // Press the keys
-                        }
-                    }
-                    else if (noteEvent.CommandCode == MidiCommandCode.NoteOff ||
-                             (noteEvent.CommandCode == MidiCommandCode.NoteOn && noteEvent.Velocity == 0))
-                    {
-                        // Handle NoteOff event (or NoteOn with velocity 0)
-                        if (activeNotes.ContainsKey(midiKey))
-                        {
-                            await ReleaseKeyAsync(keyCombination); // Release the keys
-                            activeNotes.Remove(midiKey);
-                        }
-                    }
-                }
-            }
-        }
-
-
-
+       
 
 
 
@@ -377,17 +451,15 @@ namespace OHMidiPlayer035
         private void LoadMidiFilesFromPath(string path)
         {
             string[] files = Directory.GetFiles(path, "*.mid");
-            midiFilePaths.Clear(); // Clear the original list
-            filteredMidiFilePaths.Clear(); // Clear the filtered list
-            midiLibrary.Items.Clear(); // Clear the ListBox
-
-            foreach (string file in files)
+            midiFilePaths.Clear();
+            filteredMidiFilePaths.Clear();
+            midiLibrary.Items.Clear();
+            string[] array = files;
+            foreach (string item in array)
             {
-                midiFilePaths.Add(file);
-                filteredMidiFilePaths.Add(file); // Also add to the filtered list
+                midiFilePaths.Add(item);
+                filteredMidiFilePaths.Add(item);
             }
-
-            // Display the files in the ListBox
             UpdateMidiLibraryListBox();
         }
 
@@ -398,11 +470,7 @@ namespace OHMidiPlayer035
                 if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
                 {
                     string selectedPath = folderBrowserDialog.SelectedPath;
-
-                    // Load MIDI files from the selected path
                     LoadMidiFilesFromPath(selectedPath);
-
-                    // Save the selected path to settings.ini
                     SaveLastUsedPath(selectedPath);
                 }
             }
@@ -427,27 +495,24 @@ namespace OHMidiPlayer035
 
         private void MidiLibrary_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (midiLibrary.SelectedIndex >= 0)
+            if (midiLibrary.SelectedIndex < 0)
             {
-                // Determine which list to use based on whether the search box is empty
-                List<string> currentList = string.IsNullOrEmpty(searchBox.Text) ? midiFilePaths : filteredMidiFilePaths;
-
-                // Get the selected file from the appropriate list
-                string selectedFileName = Path.GetFileName(currentList[midiLibrary.SelectedIndex]);
-                currentSong.Text = selectedFileName;
-                StartScrollingText(selectedFileName);
-
-                // Load the MIDI file based on the appropriate list
-                LoadMidiFile(currentList[midiLibrary.SelectedIndex]);
-
-                // Calculate and display the song duration
-                if (currentMidiFile != null)
-                {
-                    long totalTimeInSeconds = (long)(currentMidiFile.Events[0].Last().AbsoluteTime * currentMidiFile.DeltaTicksPerQuarterNote / 500000.0);
-                    songDuration = TimeSpan.FromSeconds(totalTimeInSeconds);
-                    songTime.Text = "00:00";  // Initialize songTime to 00:00
-                    songTotal.Text = songDuration.ToString(@"mm\:ss");  // Display total duration in songTotal label
-                }
+                return;
+            }
+            List<string> list = (string.IsNullOrEmpty(searchBox.Text) ? midiFilePaths : filteredMidiFilePaths);
+            string fileName = Path.GetFileName(list[midiLibrary.SelectedIndex]);
+            currentSong.Text = fileName;
+            StartScrollingText(fileName);
+            LoadMidiFile(list[midiLibrary.SelectedIndex]);
+            if (currentMidiFile != null)
+            {
+                TempoMap tempoMap = currentMidiFile.GetTempoMap();
+                long timeSpan = (from trackChunk in currentMidiFile.GetTrackChunks()
+                                 select trackChunk.GetDuration<MidiTimeSpan>(tempoMap)).Max();
+                MetricTimeSpan metricTimeSpan = TimeConverter.ConvertTo<MetricTimeSpan>((ITimeSpan)new MidiTimeSpan(timeSpan), tempoMap);
+                songDuration = TimeSpan.FromSeconds(metricTimeSpan.TotalSeconds);
+                songTime.Text = "00:00";
+                songTotal.Text = songDuration.ToString("mm\\:ss");
             }
         }
 
@@ -478,19 +543,35 @@ namespace OHMidiPlayer035
         {
             try
             {
-                currentMidiFile = new MidiFile(filePath, false);
-                totalTracks = currentMidiFile.Tracks;
+                currentMidiFile = MidiFile.Read(filePath);
+                totalTracks = currentMidiFile.GetTrackChunks().Count();
                 currentTrackIndex = 0;
+                LoadTrackNames();
                 UpdateTrackInfo();
-
-                // Calculate and display the song duration using the new method
                 songDuration = GetMidiFileDuration(currentMidiFile);
-                songTime.Text = "00:00";  // Reset the elapsed time to 00:00
-                songTotal.Text = $"{songDuration.ToString(@"mm\:ss")}";  // Display the total duration with correct format
+                songTime.Text = "00:00";
+                songTotal.Text = songDuration.ToString("mm\\:ss") ?? "";
             }
             catch (Exception ex)
             {
                 MessageBox.Show("Error loading MIDI file: " + ex.Message);
+            }
+        }
+
+
+
+        private void LoadTrackNames()
+        {
+            trackNames.Clear();
+            foreach (TrackChunk trackChunk in currentMidiFile.GetTrackChunks())
+            {
+                string item = "Unnamed Track";
+                SequenceTrackNameEvent sequenceTrackNameEvent = trackChunk.Events.OfType<SequenceTrackNameEvent>().FirstOrDefault();
+                if (sequenceTrackNameEvent != null)
+                {
+                    item = sequenceTrackNameEvent.Text;
+                }
+                trackNames.Add(item);
             }
         }
 
@@ -504,9 +585,10 @@ namespace OHMidiPlayer035
 
         private void UpdateTrackInfo()
         {
-            if (currentMidiFile != null)
+            if (currentMidiFile != null && trackNames.Count > currentTrackIndex)
             {
-                trackInfo.Text = $"Track {currentTrackIndex + 1}/{totalTracks}";
+                string arg = trackNames[currentTrackIndex];
+                trackInfo.Text = $"Track {currentTrackIndex + 1}/{totalTracks} {arg}";
             }
         }
 
@@ -533,30 +615,18 @@ namespace OHMidiPlayer035
             if (loop.Tag as string == "Off")
             {
                 loop.Tag = "On";
-                loopind.Image = Properties.Resources.good; // Change image to "good.png"
+                loopind.Image = Resources.good;
             }
             else
             {
                 loop.Tag = "Off";
-                loopind.Image = Properties.Resources.off; // Change image to "off.png"
+                loopind.Image = Resources.off;
             }
         }
 
 
         private void StartScrollingText(string text)
         {
-            scrollTimer.Stop();
-            scrollingText = text;
-            scrollPosition = 0;
-
-            if (TextRenderer.MeasureText(scrollingText, currentSong.Font).Width > currentSong.Width)
-            {
-                scrollTimer.Start();
-            }
-            else
-            {
-                currentSong.Text = scrollingText;
-            }
         }
 
         private void ScrollTimer_Tick(object sender, EventArgs e)
@@ -595,59 +665,226 @@ namespace OHMidiPlayer035
         }
 
 
-        // Method to start playback
+        private async Task HandleKeyPressAsync(List<VirtualKeyCode> mainKeys, List<VirtualKeyCode> modifiers, bool shouldHoldModifier, List<VirtualKeyCode> currentModifiers, int modHold)
+        {
+            foreach (VirtualKeyCode currentModifier in currentModifiers.Except(modifiers))
+            {
+                if (keyStates.ContainsKey(currentModifier) && keyStates[currentModifier])
+                {
+                    inputSimulator.Keyboard.KeyUp(currentModifier);
+                    keyStates[currentModifier] = false;
+                    virtualKeys.ResetKey(currentModifier);
+                }
+            }
+            foreach (VirtualKeyCode modifier in modifiers.Except(currentModifiers))
+            {
+                if (!keyStates.ContainsKey(modifier) || !keyStates[modifier])
+                {
+                    inputSimulator.Keyboard.KeyDown(modifier);
+                    keyStates[modifier] = true;
+                    virtualKeys.HighlightKey(modifier);
+                    await Task.Delay(modHold);
+                }
+            }
+            foreach (VirtualKeyCode key in mainKeys)
+            {
+                if (!keyStates.ContainsKey(key) || !keyStates[key])
+                {
+                    inputSimulator.Keyboard.KeyDown(key);
+                    keyStates[key] = true;
+                    virtualKeys.HighlightKey(key);
+                    await Task.Delay(10);
+                }
+            }
+            foreach (VirtualKeyCode key in mainKeys)
+            {
+                if (keyStates.ContainsKey(key) && keyStates[key])
+                {
+                    await Task.Delay(50);
+                    inputSimulator.Keyboard.KeyUp(key);
+                    keyStates[key] = false;
+                    virtualKeys.ResetKey(key);
+                }
+            }
+            if (!shouldHoldModifier)
+            {
+                foreach (VirtualKeyCode modifier in modifiers)
+                {
+                    if (keyStates.ContainsKey(modifier) && keyStates[modifier])
+                    {
+                        inputSimulator.Keyboard.KeyUp(modifier);
+                        keyStates[modifier] = false;
+                        virtualKeys.ResetKey(modifier);
+                    }
+                }
+            }
+            currentModifiers.Clear();
+            if (shouldHoldModifier)
+            {
+                currentModifiers.AddRange(modifiers);
+            }
+        }
+
+        private int CalculateAdjustedTempo(int initialTempo)
+        {
+            double num = (double)speedSlider.Value / 100.0 * 1.4;
+            return (int)((double)initialTempo / num);
+        }
+
+        private async Task PlayFromQueue(List<(MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex)> playbackQueue, CancellationToken token)
+        {
+            try
+            {
+                try
+                {
+                    List<VirtualKeyCode> currentModifiers = new List<VirtualKeyCode>();
+                    int modHold = int.Parse(Settings.Default["modHold"].ToString());
+                    int minNoteDelay = int.Parse(Settings.Default["minNoteDelay"].ToString());
+                    int ticksPerQuarterNote = ((TicksPerQuarterNoteTimeDivision)currentMidiFile.TimeDivision).TicksPerQuarterNote;
+                    int i = 0;
+                    while (true)
+                    {
+                        if (i < playbackQueue.Count)
+                        {
+                            (MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex) currentEvent = playbackQueue[i];
+                            var (midiEvent, absoluteTime, _, _) = currentEvent;
+                            if (token.IsCancellationRequested)
+                            {
+                                return;
+                            }
+                            int adjustedTempo = CalculateAdjustedTempo(currentEvent.tempo);
+                            List<VirtualKeyCode> modifiers;
+                            List<(MidiEvent midiEvent, List<VirtualKeyCode> mainKeys, List<VirtualKeyCode> modifiers)> simultaneousNotes = new List<(MidiEvent, List<VirtualKeyCode>, List<VirtualKeyCode>)> { (midiEvent, GetKeysFromMidiEvent(midiEvent, out modifiers), modifiers) };
+                            while (i + 1 < playbackQueue.Count && playbackQueue[i + 1].absoluteTime == absoluteTime)
+                            {
+                                i++;
+                                (MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex) nextEvent = playbackQueue[i];
+                                simultaneousNotes.Add((nextEvent.midiEvent, GetKeysFromMidiEvent(nextEvent.midiEvent, out modifiers), modifiers));
+                            }
+                            foreach (IGrouping<string, (MidiEvent, List<VirtualKeyCode>, List<VirtualKeyCode>)> group in from note in simultaneousNotes
+                                                                                                                         group note by string.Join(",", note.modifiers.Select((VirtualKeyCode m) => m.ToString())))
+                            {
+                                List<VirtualKeyCode> combinedMainKeys = group.SelectMany<(MidiEvent, List<VirtualKeyCode>, List<VirtualKeyCode>), VirtualKeyCode>(((MidiEvent midiEvent, List<VirtualKeyCode> mainKeys, List<VirtualKeyCode> modifiers) note) => note.mainKeys).Distinct().ToList();
+                                List<VirtualKeyCode> combinedModifiers = group.SelectMany<(MidiEvent, List<VirtualKeyCode>, List<VirtualKeyCode>), VirtualKeyCode>(((MidiEvent midiEvent, List<VirtualKeyCode> mainKeys, List<VirtualKeyCode> modifiers) note) => note.modifiers).Distinct().ToList();
+                                bool shouldHoldModifier = ShouldHoldModifier(combinedModifiers, playbackQueue, i);
+                                await HandleKeyPressAsync(combinedMainKeys, combinedModifiers, shouldHoldModifier, currentModifiers, modHold);
+                            }
+                            if (i + 1 < playbackQueue.Count)
+                            {
+                                long nextNoteTime = playbackQueue[i + 1].absoluteTime;
+                                int delay = CalculateDelay(nextNoteTime - absoluteTime, adjustedTempo, ticksPerQuarterNote);
+                                delay = Math.Max(delay, minNoteDelay);
+                                if (delay > 0)
+                                {
+                                    await Task.Delay(delay);
+                                }
+                            }
+                            modifiers = null;
+                            i++;
+                            continue;
+                        }
+                        if (loop.Tag as string == "On" && !token.IsCancellationRequested)
+                        {
+                            await PlayFromQueue(playbackQueue, token);
+                        }
+                        break;
+                    }
+                    goto end_IL_0033;
+                }
+                catch (Exception ex2)
+                {
+                    Exception ex = ex2;
+                    MessageBox.Show("Playback error: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+                    goto end_IL_0033;
+                }
+            end_IL_0033:;
+            }
+            finally
+            {
+                isPlaying = false;
+                foreach (VirtualKeyCode key in (from k in keyStates
+                                                where k.Value
+                                                select k.Key).ToList())
+                {
+                    await ReleaseKeyAsync(new List<VirtualKeyCode> { key });
+                }
+            }
+        }
+
+        private List<VirtualKeyCode> GetKeysFromMidiEvent(MidiEvent midiEvent, out List<VirtualKeyCode> modifiers)
+        {
+            modifiers = new List<VirtualKeyCode>();
+            List<VirtualKeyCode> result = new List<VirtualKeyCode>();
+            if (midiEvent is NoteOnEvent noteOnEvent && MidiKeyMap.MidiToKey.TryGetValue((byte)noteOnEvent.NoteNumber, out var value))
+            {
+                modifiers = value.Where(IsModifierKey).ToList();
+                result = value.Except(modifiers).ToList();
+                if (ShiftButton.Tag as string == "Off")
+                {
+                    modifiers.RemoveAll((VirtualKeyCode m) => m == VirtualKeyCode.LSHIFT || m == VirtualKeyCode.RSHIFT);
+                }
+                if (ControlButton.Tag as string == "Off")
+                {
+                    modifiers.RemoveAll((VirtualKeyCode m) => m == VirtualKeyCode.LCONTROL || m == VirtualKeyCode.RCONTROL);
+                }
+            }
+            return result;
+        }
+
+        private bool ShouldHoldModifier(List<VirtualKeyCode> modifiers, List<(MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex)> playbackQueue, int currentIndex)
+        {
+            for (int i = currentIndex + 1; i < playbackQueue.Count; i++)
+            {
+                if (playbackQueue[i].midiEvent is NoteOnEvent noteOnEvent && MidiKeyMap.MidiToKey.TryGetValue((byte)noteOnEvent.NoteNumber, out var value))
+                {
+                    List<VirtualKeyCode> first = value.Where(IsModifierKey).ToList();
+                    if (first.Intersect(modifiers).Any())
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         private void StartPlayback()
         {
             if (isPlaying)
             {
-                MessageBox.Show("Playback is already in progress.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Playback is already in progress.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
                 return;
             }
-
             if (currentMidiFile == null)
             {
-                MessageBox.Show("Please select a MIDI file first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please select a MIDI file first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
                 return;
             }
-
-            // Only check ONCE_HUMAN if ignoreOHChecked is false
-            if (!ignoreOHChecked)
+            if (CurrentLayoutIndex == 0)
             {
-                if (!IsOnceHumanRunning() || !IsOnceHumanFocused())
-                {
-                    MessageBox.Show("Please click F5 while inside Once Human", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
+                MidiKeyMap.SetLayout("QWERTY");
             }
-
+            else if (CurrentLayoutIndex == 1)
+            {
+                MidiKeyMap.SetLayout("AZERTY");
+            }
+            List<(MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex)> playbackQueue = BuildPlaybackQueue();
+            TempoMap tempoMap = currentMidiFile.GetTempoMap();
             cancellationTokenSource = new CancellationTokenSource();
             isPlaying = true;
-
-            // Reset and start the song timer
             elapsedTime = TimeSpan.Zero;
             songTimer.Start();
-
-            Task.Run(() => PlayMidi(cancellationTokenSource.Token));
+            Task.Run(() => PlayFromQueue(playbackQueue, cancellationTokenSource.Token));
         }
 
-
-
-
-
-
-        // Method to stop playback and reset
-        // Method to stop playback and reset
         private void StopPlayback()
         {
             cancellationTokenSource?.Cancel();
             isPlaying = false;
-
-            // Stop the song timer and reset the elapsed time
             songTimer.Stop();
             songTime.Text = "0:00";
-
-            // If you want to ensure all modifiers are released, call ReleaseModifiers with an empty list or last used keys
             ReleaseModifiers(new List<VirtualKeyCode>());
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
         }
 
 
@@ -673,68 +910,30 @@ namespace OHMidiPlayer035
             trackInfo.Text = string.Empty;
         }
 
-        private void ProcessMidiEvent(MidiEvent midiEvent, ref int lastTime, int tempo, int ticksPerQuarterNote)
-        {
-            int delay = CalculateDelay((int)midiEvent.AbsoluteTime, lastTime, tempo, ticksPerQuarterNote);
 
-            if (delay > 0)
-            {
-                PreciseSleep(delay);
-
-            }
-
-            lastTime = (int)midiEvent.AbsoluteTime;
-
-            if (midiEvent is NoteOnEvent noteOnEvent && noteOnEvent.Velocity > 0)
-            {
-                // Send key press based on the note using the MidiKeyMap
-                if (MidiKeyMap.MidiToKey.ContainsKey(noteOnEvent.NoteNumber))
-                {
-                    var keys = MidiKeyMap.MidiToKey[noteOnEvent.NoteNumber];
-
-                    foreach (var key in keys)
-                    {
-                        inputSimulator.Keyboard.KeyDown(key);
-                    }
-
-                    PreciseSleep(50); // Small delay for key press
-
-                    foreach (var key in keys)
-                    {
-                        inputSimulator.Keyboard.KeyUp(key);
-                    }
-                }
-            }
-        }
 
         private void ignorekeys_Click(object sender, EventArgs e)
         {
             ignoreKeysClickCount++;
-
             switch (ignoreKeysClickCount % 4)
             {
                 case 1:
                     ShiftButton.Tag = "Off";
                     ControlButton.Tag = "On";
                     break;
-
                 case 2:
                     ShiftButton.Tag = "On";
                     ControlButton.Tag = "Off";
                     break;
-
                 case 3:
                     ShiftButton.Tag = "Off";
                     ControlButton.Tag = "Off";
                     break;
-
                 case 0:
                     ShiftButton.Tag = "On";
                     ControlButton.Tag = "On";
                     break;
             }
-
-            // Update button states
             UpdateButtonState(ShiftButton);
             UpdateButtonState(ControlButton);
         }
@@ -753,322 +952,140 @@ namespace OHMidiPlayer035
         }
 
 
-        private async Task PlayMidi(CancellationToken token)
+
+
+
+
+        private int CalculateDelay(long absoluteTimeDelta, int tempo, int ticksPerQuarterNote)
         {
-            try
-            {
-                if (currentMidiFile == null)
-                {
-                    MessageBox.Show("No MIDI file loaded.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
+            int num = (int)((double)absoluteTimeDelta * ((double)tempo / 1000.0) / (double)ticksPerQuarterNote);
+            double num2 = (double)speedSlider.Value / 100.0;
+            num = (int)((double)num / num2);
+            return Math.Max(num, 10);
+        }
 
-                do
-                {
-                    int ticksPerQuarterNote = currentMidiFile.DeltaTicksPerQuarterNote;
-                    int tempo = GetInitialTempo(currentMidiFile);
-                    tempo = (int)(tempo * (100.0 / speedSlider.Value)); // Adjust tempo based on speed slider
-                    int lastTime = 0;
 
-                    List<(MidiEvent midiEvent, int absoluteTime)> allEvents = CollectMidiEvents(currentMidiFile, ticksPerQuarterNote, tempo);
-
-                    foreach (var (midiEvent, absoluteTime) in allEvents)
-                    {
-                        if (token.IsCancellationRequested)
-                        {
-                            return;
-                        }
-
-                        // Update tempo dynamically based on current position
-                        tempo = GetCurrentTempo(absoluteTime, currentMidiFile);
-                        tempo = (int)(tempo * (100.0 / speedSlider.Value)); // Adjust for speed slider
-
-                        // Calculate the delay before the next event
-                        int delay = CalculateDelay(absoluteTime, lastTime, tempo, ticksPerQuarterNote);
-
-                        // Ensure a minimum delay of 1.5ms between events
-                        delay = Math.Max(delay, 2);
-
-                        await Task.Delay(delay); // Apply delay before handling keys
-
-                        lastTime = absoluteTime;
-
-                        if (midiEvent is NoteOnEvent noteOn)
-                        {
-                            if (MidiKeyMap.MidiToKey.TryGetValue(noteOn.NoteNumber, out var keys))
-                            {
-                                if (noteOn.CommandCode == MidiCommandCode.NoteOn && noteOn.Velocity > 0)
-                                {
-                                    // Debug: Log note pressed
-                                    LogDebug($"Note Pressed (PlayMidi): {noteOn.NoteNumber} -> {string.Join(", ", keys)}");
-
-                                    // Handle NoteOn event
-                                    await PressKeyAsync(keys);
-                                }
-                                else if (noteOn.CommandCode == MidiCommandCode.NoteOn && noteOn.Velocity == 0)
-                                {
-                                    // Debug: Log note released
-                                    LogDebug($"Note Released (PlayMidi): {noteOn.NoteNumber} -> {string.Join(", ", keys)}");
-
-                                    // Handle NoteOff event (NoteOn with velocity 0)
-                                    await ReleaseKeyAsync(keys);
-                                }
-                            }
-                        }
-                    }
-                } while (loop.Tag as string == "On" && !token.IsCancellationRequested); // Loop if enabled and not canceled
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Playback error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            finally
-            {
-                isPlaying = false;
-                // Ensure all keys are released after playback ends
-                foreach (var key in keyStates.Where(k => k.Value).Select(k => k.Key).ToList())
-                {
-                    await ReleaseKeyAsync(new List<VirtualKeyCode> { key });
-                }
-            }
+        public void UpdateAlwaysOnTop(bool alwaysOnTop)
+        {
+            this.TopMost = alwaysOnTop;
         }
 
 
 
-
-
-
-
-
-
-        private void PreciseSleep(int milliseconds)
-        {
-            if (milliseconds > 10)
-            {
-                Thread.Sleep(milliseconds - 10); // Sleep for most of the duration
-            }
-            var stopwatch = Stopwatch.StartNew();
-            while (stopwatch.ElapsedMilliseconds < milliseconds)
-            {
-                // Busy-wait loop to fine-tune the remaining duration
-            }
-        }
-
-
-
-
-
-        public void RefreshSettings()
-        {
-            this.TopMost = Properties.Settings.Default.AlwaysOnTop;
-            CurrentLayoutIndex = Properties.Settings.Default.CurrentLayoutIndex;
-            UpdateKeyMapping();
-        }
 
 
 
 
         private int GetInitialTempo(MidiFile midiFile)
         {
-            foreach (var track in midiFile.Events)
+            foreach (TrackChunk trackChunk in midiFile.GetTrackChunks())
             {
-                var tempoEvent = track.OfType<TempoEvent>().FirstOrDefault();
-                if (tempoEvent != null)
+                SetTempoEvent setTempoEvent = trackChunk.Events.OfType<SetTempoEvent>().FirstOrDefault();
+                if (setTempoEvent != null)
                 {
-                    int tempo = tempoEvent.MicrosecondsPerQuarterNote;
-                    LogDebug($"Initial Tempo: {tempo} microseconds per quarter note");
-                    return tempo;
+                    int num = (int)setTempoEvent.MicrosecondsPerQuarterNote;
+                    LogDebug($"Initial Tempo: {num} microseconds per quarter note");
+                    return num;
                 }
             }
-
-            return 500000; // Default tempo if no tempo event is found
+            return 500000;
         }
 
 
 
         private TimeSpan GetMidiFileDuration(MidiFile midiFile)
         {
-            long lastAbsoluteTime = 0;
+            TempoMap tempoMap = midiFile.GetTempoMap();
+            MidiTimeSpan time = (from trackChunk in midiFile.GetTrackChunks()
+                                 select trackChunk.GetDuration<MidiTimeSpan>(tempoMap)).Max();
+            MetricTimeSpan metricTimeSpan = TimeConverter.ConvertTo<MetricTimeSpan>((ITimeSpan)time, tempoMap);
+            return TimeSpan.FromSeconds(metricTimeSpan.TotalSeconds);
+        }
 
-            foreach (var track in midiFile.Events)
+        private List<(MidiEvent midiEvent, long absoluteTime, int tempo, int trackIndex)> CollectMidiEventsWithTrack(MidiFile midiFile, int ticksPerQuarterNote, int initialTempo)
+        {
+            List<(MidiEvent, long, int, int)> list = new List<(MidiEvent, long, int, int)>();
+            long[] array = new long[midiFile.GetTrackChunks().Count()];
+            int item = initialTempo;
+            List<TrackChunk> list2 = midiFile.GetTrackChunks().ToList();
+            for (int i = 0; i < list2.Count; i++)
             {
-                if (track.Count > 0)
+                foreach (TimedEvent timedEvent in list2[i].GetTimedEvents())
                 {
-                    var lastEvent = track.Last();
-                    if (lastEvent.AbsoluteTime > lastAbsoluteTime)
+                    MidiEvent @event = timedEvent.Event;
+                    if (@event is SetTempoEvent setTempoEvent)
                     {
-                        lastAbsoluteTime = lastEvent.AbsoluteTime;
+                        item = (int)setTempoEvent.MicrosecondsPerQuarterNote;
                     }
+                    list.Add((@event, timedEvent.Time, item, i));
                 }
             }
-
-            // Calculate duration in microseconds
-            var ticksPerQuarterNote = midiFile.DeltaTicksPerQuarterNote;
-            var microsecondsPerQuarterNote = GetInitialTempo(midiFile);
-            var totalMicroseconds = (lastAbsoluteTime * microsecondsPerQuarterNote) / ticksPerQuarterNote;
-
-            return TimeSpan.FromMilliseconds(totalMicroseconds / 1000.0);
+            list.Sort(((MidiEvent, long, int, int) x, (MidiEvent, long, int, int) y) => x.Item2.CompareTo(y.Item2));
+            return list;
         }
 
 
 
-        private List<(MidiEvent midiEvent, int absoluteTime)> CollectMidiEvents(MidiFile midiFile, int ticksPerQuarterNote, int tempo)
-        {
-            var allEvents = new List<(MidiEvent, int)>();
-            int[] absoluteTimes = new int[midiFile.Tracks];
-
-            for (int trackIndex = 0; trackIndex < midiFile.Events.Tracks; trackIndex++)
-            {
-                foreach (MidiEvent midiEvent in midiFile.Events[trackIndex])
-                {
-                    allEvents.Add((midiEvent, absoluteTimes[trackIndex]));
-                    absoluteTimes[trackIndex] += midiEvent.DeltaTime;
-                }
-            }
-
-            allEvents.Sort((x, y) => x.Item2.CompareTo(y.Item2));
-            return allEvents;
-        }
-
-        private int CalculateDelay(int absoluteTime, int lastTime, int tempo, int ticksPerQuarterNote)
-        {
-            int deltaTime = absoluteTime - lastTime;
-            int delay = (int)((deltaTime * (tempo / 1000.0)) / ticksPerQuarterNote);
-
-            LogDebug($"Absolute Time: {absoluteTime}, Delay: {delay}ms, Tempo: {tempo}");
-
-            return delay;
-        }
-
-        private int GetCurrentTempo(int absoluteTime, MidiFile midiFile)
-        {
-            int currentTempo = 500000; // Default tempo
-            foreach (var track in midiFile.Events)
-            {
-                foreach (var midiEvent in track)
-                {
-                    if (midiEvent.AbsoluteTime > absoluteTime)
-                        break;
-
-                    if (midiEvent is TempoEvent tempoEvent)
-                        currentTempo = tempoEvent.MicrosecondsPerQuarterNote;
-                }
-            }
-            return currentTempo;
-        }
 
 
 
-        private void HandleModifiers(List<VirtualKeyCode> keys)
-        {
-            foreach (var key in keys)
-            {
-                if ((key == VirtualKeyCode.LCONTROL || key == VirtualKeyCode.RCONTROL ||
-                     key == VirtualKeyCode.LSHIFT || key == VirtualKeyCode.RSHIFT) &&
-                    (!keyStates.ContainsKey(key) || !keyStates[key]))
-                {
-                    inputSimulator.Keyboard.KeyDown(key);
-                    keyStates[key] = true; // Mark the modifier as pressed
-                    LogDebug($"Modifier Down: {key} at {DateTime.Now}");
 
-                    // Add a small delay after pressing the modifier to ensure it is active
-                    Thread.Sleep(10);
-                }
-            }
-        }
+
+
+
 
         private async Task PressKeyAsync(List<VirtualKeyCode> keys)
         {
-            int modHold = int.Parse(Properties.Settings.Default["modHold"].ToString());
-            int minNoteDelay = int.Parse(Properties.Settings.Default["minNoteDelay"].ToString());
-
-            var modifiers = keys.Where(k => IsModifierKey(k)).ToList();
-            var mainKeys = keys.Except(modifiers).ToList();
-
-            // Press all new modifiers first
-            foreach (var modifier in modifiers)
+            List<VirtualKeyCode> modifiers = keys.Where((VirtualKeyCode k) => IsModifierKey(k)).ToList();
+            List<VirtualKeyCode> mainKeys = keys.Except(modifiers).ToList();
+            foreach (VirtualKeyCode modifier in modifiers)
             {
                 if (!keyStates.ContainsKey(modifier) || !keyStates[modifier])
                 {
                     inputSimulator.Keyboard.KeyDown(modifier);
                     keyStates[modifier] = true;
-                    LogDebug($"Modifier Down: {modifier}");  // Log when a modifier is pressed
-                    virtualKeys.HighlightKey(modifier);  // Highlight the modifier key
-                    await Task.Delay(modHold); // Small delay to ensure the modifier is registered
+                    virtualKeys.HighlightKey(modifier);
+                    await Task.Delay(10);
                 }
             }
-
-            // Press all main keys, only if they haven't been pressed yet
-            foreach (var key in mainKeys)
+            foreach (VirtualKeyCode key in mainKeys)
             {
                 if (!keyStates.ContainsKey(key) || !keyStates[key])
                 {
                     inputSimulator.Keyboard.KeyDown(key);
                     keyStates[key] = true;
-                    LogDebug($"Key Down: {key}");  // Log when a key is pressed
-                    virtualKeys.HighlightKey(key);  // Highlight the main key
-                    await Task.Delay(minNoteDelay); // Delay to simulate key press time
+                    virtualKeys.HighlightKey(key);
+                    await Task.Delay(10);
                 }
             }
-
-            // Release the main keys after pressing them
-            foreach (var key in mainKeys)
-            {
-                if (keyStates.ContainsKey(key) && keyStates[key])
-                {
-                    inputSimulator.Keyboard.KeyUp(key);
-                    keyStates[key] = false;
-                    LogDebug($"Key Up: {key}");  // Log when a key is released
-                    virtualKeys.ResetKey(key);  // Reset the main key color
-                    await Task.Delay(1); // Ensure proper release
-                }
-            }
-
-            // Release the modifiers after releasing the main keys
-            foreach (var modifier in modifiers)
-            {
-                if (keyStates.ContainsKey(modifier) && keyStates[modifier])
-                {
-                    inputSimulator.Keyboard.KeyUp(modifier);
-                    keyStates[modifier] = false;
-                    LogDebug($"Modifier Up: {modifier}");  // Log when a modifier is released
-                    virtualKeys.ResetKey(modifier);  // Reset the modifier key color
-                    await Task.Delay(1); // Small delay to ensure proper timing
-                }
-            }
-
-            // Update the list of last pressed modifiers
-            lastPressedModifiers = modifiers;
         }
 
 
 
         private async Task ReleaseKeyAsync(List<VirtualKeyCode> keys)
         {
-            var modifiers = keys.Where(k => IsModifierKey(k)).ToList();
-            var mainKeys = keys.Except(modifiers).ToList();
-
-            // Release all main keys first, only if they are currently pressed
-            foreach (var key in mainKeys)
+            List<VirtualKeyCode> modifiers = keys.Where((VirtualKeyCode k) => IsModifierKey(k)).ToList();
+            List<VirtualKeyCode> mainKeys = keys.Except(modifiers).ToList();
+            foreach (VirtualKeyCode key in mainKeys)
             {
                 if (keyStates.ContainsKey(key) && keyStates[key])
                 {
                     inputSimulator.Keyboard.KeyUp(key);
                     keyStates[key] = false;
-                    virtualKeys.ResetKey(key);  // Reset the main key color
-                    await Task.Delay(1); // Ensure proper release
+                    virtualKeys.ResetKey(key);
+                    await Task.Delay(10);
                 }
             }
-
-            // Release all modifiers last, only if they are currently pressed
-            foreach (var modifier in modifiers)
+            foreach (VirtualKeyCode modifier in modifiers)
             {
                 if (keyStates.ContainsKey(modifier) && keyStates[modifier])
                 {
                     inputSimulator.Keyboard.KeyUp(modifier);
                     keyStates[modifier] = false;
-                    virtualKeys.ResetKey(modifier);  // Reset the modifier key color
-                    await Task.Delay(1); // Small delay to ensure proper timing
+                    virtualKeys.ResetKey(modifier);
+                    await Task.Delay(10);
+                    activeNotes.Clear();
+                    GC.Collect();
                 }
             }
         }
@@ -1076,9 +1093,7 @@ namespace OHMidiPlayer035
 
         private bool IsModifierKey(VirtualKeyCode key)
         {
-            return key == VirtualKeyCode.LCONTROL || key == VirtualKeyCode.RCONTROL ||
-                   key == VirtualKeyCode.LSHIFT || key == VirtualKeyCode.RSHIFT ||
-                   key == VirtualKeyCode.LMENU || key == VirtualKeyCode.RMENU;
+            return key == VirtualKeyCode.LCONTROL || key == VirtualKeyCode.RCONTROL || key == VirtualKeyCode.LSHIFT || key == VirtualKeyCode.RSHIFT || key == VirtualKeyCode.LMENU || key == VirtualKeyCode.RMENU;
         }
 
 
@@ -1100,15 +1115,13 @@ namespace OHMidiPlayer035
 
         private void ReleaseModifiers(List<VirtualKeyCode> keys)
         {
-            foreach (var key in keys)
+            foreach (VirtualKeyCode key in keys)
             {
-                if ((key == VirtualKeyCode.LCONTROL || key == VirtualKeyCode.RCONTROL ||
-                     key == VirtualKeyCode.LSHIFT || key == VirtualKeyCode.RSHIFT) &&
-                    keyStates.ContainsKey(key) && keyStates[key])
+                if ((key == VirtualKeyCode.LCONTROL || key == VirtualKeyCode.RCONTROL || key == VirtualKeyCode.LSHIFT || key == VirtualKeyCode.RSHIFT) && keyStates.ContainsKey(key) && keyStates[key])
                 {
-                    Thread.Sleep(10); // Delay before releasing the modifier to ensure proper timing with the main key
+                    Thread.Sleep(0);
                     inputSimulator.Keyboard.KeyUp(key);
-                    keyStates[key] = false; // Mark the modifier as released
+                    keyStates[key] = false;
                     LogDebug($"Modifier Up: {key} at {DateTime.Now}");
                 }
             }
@@ -1134,27 +1147,19 @@ namespace OHMidiPlayer035
             }
         }
 
-        protected override void OnFormClosed(FormClosedEventArgs e)
-        {
-            UnregisterHotKey(this.Handle, HOTKEY_ID_F5);
-            UnregisterHotKey(this.Handle, HOTKEY_ID_F6);
-            base.OnFormClosed(e);
-        }
+
 
         private void playall_Click(object sender, EventArgs e)
         {
-            // Check the tag to determine the current image
             if (trackind.Tag as string == "good")
             {
-                // Set to "off.png", indicating only the selected track will play
-                trackind.Image = Properties.Resources.off;
-                trackind.Tag = "off"; // Update the tag to "off"
+                trackind.Image = Resources.off;
+                trackind.Tag = "off";
             }
             else
             {
-                // Set to "good.png", indicating all tracks will play
-                trackind.Image = Properties.Resources.good;
-                trackind.Tag = "good"; // Update the tag to "good"
+                trackind.Image = Resources.good;
+                trackind.Tag = "good";
             }
         }
 
@@ -1177,7 +1182,6 @@ namespace OHMidiPlayer035
             {
                 if (settingsForm.ShowDialog() == DialogResult.OK)
                 {
-                    // Reapply settings after the settings form is closed
                     ApplySettings();
                 }
             }
@@ -1185,9 +1189,13 @@ namespace OHMidiPlayer035
 
         private void ApplySettings()
         {
-            this.TopMost = Properties.Settings.Default.AlwaysOnTop;
-            CurrentLayoutIndex = Properties.Settings.Default.CurrentLayoutIndex;
-            UpdateKeyMapping();  // Apply the key mapping based on the current layout
+            base.TopMost = Settings.Default.AlwaysOnTop;
+            CurrentLayoutIndex = Settings.Default.CurrentLayoutIndex;
+            UpdateKeyMapping();
+        }
+
+        private void folderBrowserDialog1_HelpRequest(object sender, EventArgs e)
+        {
         }
     }
 }

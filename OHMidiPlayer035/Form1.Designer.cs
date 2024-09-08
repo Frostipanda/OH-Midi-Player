@@ -71,6 +71,7 @@
             this.Coffee = new System.Windows.Forms.Button();
             this.searchBox = new System.Windows.Forms.TextBox();
             this.refreshLib = new System.Windows.Forms.Button();
+            this.colorDialog1 = new System.Windows.Forms.ColorDialog();
             ((System.ComponentModel.ISupportInitialize)(this.trackind)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.Keyboardind)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.OHind)).BeginInit();
@@ -325,15 +326,15 @@
             // 
             // nextTrack
             // 
-            this.nextTrack.BackColor = System.Drawing.SystemColors.WindowFrame;
+            this.nextTrack.BackColor = System.Drawing.SystemColors.ButtonHighlight;
             this.nextTrack.BackgroundImage = global::OHMidiPlayer035.Properties.Resources.next;
             this.nextTrack.BackgroundImageLayout = System.Windows.Forms.ImageLayout.Zoom;
             this.nextTrack.FlatAppearance.BorderColor = System.Drawing.SystemColors.Info;
             this.nextTrack.FlatAppearance.MouseDownBackColor = System.Drawing.SystemColors.GradientInactiveCaption;
-            this.nextTrack.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
+            this.nextTrack.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.nextTrack.Font = new System.Drawing.Font("Century", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.nextTrack.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.nextTrack.Location = new System.Drawing.Point(558, 147);
+            this.nextTrack.Location = new System.Drawing.Point(274, 119);
             this.nextTrack.Name = "nextTrack";
             this.nextTrack.Size = new System.Drawing.Size(35, 35);
             this.nextTrack.TabIndex = 44;
@@ -341,15 +342,15 @@
             // 
             // prevTrack
             // 
-            this.prevTrack.BackColor = System.Drawing.SystemColors.WindowFrame;
+            this.prevTrack.BackColor = System.Drawing.SystemColors.ButtonHighlight;
             this.prevTrack.BackgroundImage = global::OHMidiPlayer035.Properties.Resources.prev;
             this.prevTrack.BackgroundImageLayout = System.Windows.Forms.ImageLayout.Zoom;
             this.prevTrack.FlatAppearance.BorderColor = System.Drawing.SystemColors.Info;
             this.prevTrack.FlatAppearance.MouseDownBackColor = System.Drawing.SystemColors.GradientInactiveCaption;
-            this.prevTrack.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
+            this.prevTrack.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.prevTrack.Font = new System.Drawing.Font("Century", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.prevTrack.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.prevTrack.Location = new System.Drawing.Point(331, 147);
+            this.prevTrack.Location = new System.Drawing.Point(0, 119);
             this.prevTrack.Name = "prevTrack";
             this.prevTrack.Size = new System.Drawing.Size(35, 35);
             this.prevTrack.TabIndex = 45;
@@ -359,13 +360,13 @@
             // 
             this.midiLibrary.BackColor = System.Drawing.Color.SteelBlue;
             this.midiLibrary.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.midiLibrary.Font = new System.Drawing.Font("Microsoft Sans Serif", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.midiLibrary.ForeColor = System.Drawing.SystemColors.GradientInactiveCaption;
+            this.midiLibrary.Font = new System.Drawing.Font("Microsoft Sans Serif", 13F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.midiLibrary.ForeColor = System.Drawing.SystemColors.ButtonHighlight;
             this.midiLibrary.FormattingEnabled = true;
-            this.midiLibrary.ItemHeight = 18;
+            this.midiLibrary.ItemHeight = 20;
             this.midiLibrary.Location = new System.Drawing.Point(23, 51);
             this.midiLibrary.Name = "midiLibrary";
-            this.midiLibrary.Size = new System.Drawing.Size(263, 200);
+            this.midiLibrary.Size = new System.Drawing.Size(263, 202);
             this.midiLibrary.TabIndex = 46;
             // 
             // Info
@@ -373,16 +374,18 @@
             this.Info.BackColor = System.Drawing.Color.Transparent;
             this.Info.Controls.Add(this.songTime);
             this.Info.Controls.Add(this.songTotal);
+            this.Info.Controls.Add(this.nextTrack);
             this.Info.Controls.Add(this.label2);
             this.Info.Controls.Add(this.label1);
             this.Info.Controls.Add(this.speedLabel);
+            this.Info.Controls.Add(this.prevTrack);
             this.Info.Controls.Add(this.trackInfo);
             this.Info.Controls.Add(this.currentSong);
             this.Info.Font = new System.Drawing.Font("Microsoft Sans Serif", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.Info.ForeColor = System.Drawing.SystemColors.GradientInactiveCaption;
-            this.Info.Location = new System.Drawing.Point(312, 43);
+            this.Info.Location = new System.Drawing.Point(302, 43);
             this.Info.Name = "Info";
-            this.Info.Size = new System.Drawing.Size(299, 97);
+            this.Info.Size = new System.Drawing.Size(309, 208);
             this.Info.TabIndex = 47;
             this.Info.TabStop = false;
             // 
@@ -419,35 +422,35 @@
             // label1
             // 
             this.label1.Font = new System.Drawing.Font("Microsoft Sans Serif", 9.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label1.Location = new System.Drawing.Point(7, 51);
+            this.label1.Location = new System.Drawing.Point(59, 185);
             this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(244, 20);
+            this.label1.Size = new System.Drawing.Size(195, 20);
             this.label1.TabIndex = 3;
             this.label1.Text = "F5 To Start Playback F6 to Stop Playback";
             // 
             // speedLabel
             // 
             this.speedLabel.AutoSize = true;
-            this.speedLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 14.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.speedLabel.Location = new System.Drawing.Point(145, 71);
+            this.speedLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.speedLabel.Location = new System.Drawing.Point(96, 8);
             this.speedLabel.Name = "speedLabel";
-            this.speedLabel.Size = new System.Drawing.Size(121, 24);
+            this.speedLabel.Size = new System.Drawing.Size(105, 20);
             this.speedLabel.TabIndex = 2;
             this.speedLabel.Text = "Speed: 100%";
             // 
             // trackInfo
             // 
             this.trackInfo.Font = new System.Drawing.Font("Microsoft Sans Serif", 14.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.trackInfo.Location = new System.Drawing.Point(6, 71);
+            this.trackInfo.Location = new System.Drawing.Point(0, 92);
             this.trackInfo.Name = "trackInfo";
-            this.trackInfo.Size = new System.Drawing.Size(134, 24);
+            this.trackInfo.Size = new System.Drawing.Size(309, 24);
             this.trackInfo.TabIndex = 1;
             this.trackInfo.Text = "Track 0/0";
             // 
             // currentSong
             // 
             this.currentSong.Font = new System.Drawing.Font("Microsoft Sans Serif", 18F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.currentSong.Location = new System.Drawing.Point(4, 20);
+            this.currentSong.Location = new System.Drawing.Point(-1, 61);
             this.currentSong.Name = "currentSong";
             this.currentSong.Size = new System.Drawing.Size(255, 31);
             this.currentSong.TabIndex = 0;
@@ -482,7 +485,7 @@
             // speedSlider
             // 
             this.speedSlider.LargeChange = 1;
-            this.speedSlider.Location = new System.Drawing.Point(400, 156);
+            this.speedSlider.Location = new System.Drawing.Point(387, 34);
             this.speedSlider.Maximum = 150;
             this.speedSlider.Minimum = 50;
             this.speedSlider.Name = "speedSlider";
@@ -544,12 +547,11 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.BackgroundImage = global::OHMidiPlayer035.Properties.Resources.Enitre_Project;
+            this.BackgroundImage = global::OHMidiPlayer035.Properties.Resources.finalframe;
             this.BackgroundImageLayout = System.Windows.Forms.ImageLayout.Stretch;
             this.ClientSize = new System.Drawing.Size(925, 570);
             this.Controls.Add(this.refreshLib);
             this.Controls.Add(this.searchBox);
-            this.Controls.Add(this.nextTrack);
             this.Controls.Add(this.Coffee);
             this.Controls.Add(this.Discord);
             this.Controls.Add(this.speedSlider);
@@ -557,7 +559,6 @@
             this.Controls.Add(this.selectLib);
             this.Controls.Add(this.Info);
             this.Controls.Add(this.midiLibrary);
-            this.Controls.Add(this.prevTrack);
             this.Controls.Add(this.playall);
             this.Controls.Add(this.loop);
             this.Controls.Add(this.ignorekeys);
@@ -641,6 +642,7 @@
         private System.Windows.Forms.Label label2;
         private System.Windows.Forms.Label songTotal;
         private System.Windows.Forms.Button refreshLib;
+        private System.Windows.Forms.ColorDialog colorDialog1;
     }
 }
 

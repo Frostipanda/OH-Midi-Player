@@ -61,7 +61,7 @@ namespace OHMidiPlayer035.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("1")]
+        [global::System.Configuration.DefaultSettingValueAttribute("0")]
         public int minNoteDelay {
             get {
                 return ((int)(this["minNoteDelay"]));
@@ -73,7 +73,7 @@ namespace OHMidiPlayer035.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("30")]
+        [global::System.Configuration.DefaultSettingValueAttribute("40")]
         public int modHold {
             get {
                 return ((int)(this["modHold"]));

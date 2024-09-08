@@ -31,6 +31,7 @@
             this.groupBox1 = new System.Windows.Forms.GroupBox();
             this.layoutselec = new System.Windows.Forms.ListBox();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
+            this.alwaysOnTop = new System.Windows.Forms.CheckBox();
             this.ignoreOH = new System.Windows.Forms.CheckBox();
             this.label1 = new System.Windows.Forms.Label();
             this.groupBox3 = new System.Windows.Forms.GroupBox();
@@ -67,13 +68,24 @@
             // 
             // groupBox2
             // 
+            this.groupBox2.Controls.Add(this.alwaysOnTop);
             this.groupBox2.Controls.Add(this.ignoreOH);
             this.groupBox2.Location = new System.Drawing.Point(218, 12);
             this.groupBox2.Name = "groupBox2";
-            this.groupBox2.Size = new System.Drawing.Size(179, 62);
+            this.groupBox2.Size = new System.Drawing.Size(179, 87);
             this.groupBox2.TabIndex = 1;
             this.groupBox2.TabStop = false;
             this.groupBox2.Text = "System";
+            // 
+            // alwaysOnTop
+            // 
+            this.alwaysOnTop.AutoSize = true;
+            this.alwaysOnTop.Location = new System.Drawing.Point(6, 52);
+            this.alwaysOnTop.Name = "alwaysOnTop";
+            this.alwaysOnTop.Size = new System.Drawing.Size(98, 17);
+            this.alwaysOnTop.TabIndex = 4;
+            this.alwaysOnTop.Text = "Always On Top";
+            this.alwaysOnTop.UseVisualStyleBackColor = true;
             // 
             // ignoreOH
             // 
@@ -92,7 +104,7 @@
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(35, 13);
             this.label1.TabIndex = 1;
-            this.label1.Text = "V0.35";
+            this.label1.Text = "V0.36";
             // 
             // groupBox3
             // 
@@ -167,6 +179,7 @@
             this.SizeGripStyle = System.Windows.Forms.SizeGripStyle.Hide;
             this.Text = "Settings";
             this.TopMost = true;
+            this.Load += new System.EventHandler(this.SettingsForm_Load);
             this.groupBox1.ResumeLayout(false);
             this.groupBox2.ResumeLayout(false);
             this.groupBox2.PerformLayout();
@@ -190,5 +203,6 @@
         private System.Windows.Forms.Label label2;
         private System.Windows.Forms.Label label4;
         private System.Windows.Forms.Label label3;
+        private System.Windows.Forms.CheckBox alwaysOnTop;
     }
 }
