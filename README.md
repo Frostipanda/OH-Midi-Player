@@ -41,6 +41,6 @@ This project is licensed under the MIT License.
 
 ## Acknowledgements
 
-- [DryWetMidi]([https://github.com/naudio/NAudio](https://github.com/melanchall/drywetmidi)) for MIDI handling.
+- [DryWetMidi](https://github.com/melanchall/drywetmidi) for MIDI handling.
 - [WindowsInput](https://inputsimulator.codeplex.com/) for simulating keyboard input.
 - [Psytech's Once Human Midi Maestro](https://github.com/Psystec/Once-Human-Midi-Maestro) for providing the ground work for this program and assisting in my conversion to C#. Couldn't have done it without him!
